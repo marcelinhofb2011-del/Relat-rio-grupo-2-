@@ -1,0 +1,24 @@
+{
+  "short_name": "Relatórios G2",
+  "name": "Relatórios Grupo 2",
+  "description": "Aplicativo para registro e acompanhamento de relatórios mensais de atividades espirituais do Grupo 2.",
+  "icons": [
+    {
+      "src": "/pwa-icon.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-icon.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "display": "standalone",
+  "orientation": "portrait"
+}

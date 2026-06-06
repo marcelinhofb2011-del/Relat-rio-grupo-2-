@@ -1,0 +1,33 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+body {
+  background-color: #FAFAFA;
+  color: #1A1A1A;
+  font-family: var(--font-sans);
+}
+
+/* Print utilities */
+@media print {
+  body {
+    background-color: white !important;
+    color: black !important;
+  }
+  
+  #main-sidebar, #app-header, #pdf-preview-modal .print\:hidden, #tabs-nav, .print-hide {
+    display: none !important;
+  }
+  
+  #documento-imprimir {
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
+}

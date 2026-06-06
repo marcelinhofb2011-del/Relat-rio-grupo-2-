@@ -1,0 +1,6 @@
+{
+  "name": "Relatórios Grupo 2",
+  "description": "Aplicativo para registro e acompanhamento de relatórios mensais de atividades espirituais do Grupo 2.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
