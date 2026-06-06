@@ -34,9 +34,44 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function App() {
-  // 1. Core States loaded dynamically from backend Supabase/Local proxy
-  const [membros, setMembros] = useState<Membro[]>([]);
-  const [relatorios, setRelatorios] = useState<Relatorio[]>([]);
+  // 1. Core States loaded dynamically with persistent LocalStorage fallbacks (ideal for static deployments like Vercel)
+  const [membros, setMembros] = useState<Membro[]>(() => {
+    try {
+      const saved = localStorage.getItem('g2_membros');
+      return saved ? JSON.parse(saved) : MEMBROS_INICIAIS;
+    } catch (e) {
+      console.error('Failed to parse saved membros, defaulting to initial values:', e);
+      return MEMBROS_INICIAIS;
+    }
+  });
+
+  const [relatorios, setRelatorios] = useState<Relatorio[]>(() => {
+    try {
+      const saved = localStorage.getItem('g2_relatorios');
+      return saved ? JSON.parse(saved) : RELATORIOS_INICIAIS;
+    } catch (e) {
+      console.error('Failed to parse saved relatorios, defaulting to initial values:', e);
+      return RELATORIOS_INICIAIS;
+    }
+  });
+
+  // Always keep localStorage synchronized automatically with the state changes!
+  useEffect(() => {
+    try {
+      localStorage.setItem('g2_membros', JSON.stringify(membros));
+    } catch (e) {
+      console.error('Failed to persist membros to localStorage:', e);
+    }
+  }, [membros]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('g2_relatorios', JSON.stringify(relatorios));
+    } catch (e) {
+      console.error('Failed to persist relatorios to localStorage:', e);
+    }
+  }, [relatorios]);
+
   const [supabaseConnected, setSupabaseConnected] = useState<boolean | null>(null);
   const [supabaseHasTables, setSupabaseHasTables] = useState<boolean | null>(null);
   const [supabaseError, setSupabaseError] = useState<{ message: string; code?: string } | null>(null);
@@ -90,21 +125,35 @@ export default function App() {
   const loadData = () => {
     setLoading(true);
     const p1 = fetch('/api/membros')
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP status ${r.status}`);
+        return r.json();
+      })
       .then(data => {
-        setMembros(data);
+        if (Array.isArray(data)) {
+          setMembros(data);
+        } else {
+          console.warn('API de membros não retornou uma array válida:', data);
+        }
       })
       .catch(err => {
-        console.error('Falha ao obter membros do servidor:', err);
+        console.error('Falha ao obter membros do servidor (usando local cache):', err);
       });
 
     const p2 = fetch('/api/relatorios')
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP status ${r.status}`);
+        return r.json();
+      })
       .then(data => {
-        setRelatorios(data);
+        if (Array.isArray(data)) {
+          setRelatorios(data);
+        } else {
+          console.warn('API de relatórios não retornou uma array válida:', data);
+        }
       })
       .catch(err => {
-        console.error('Falha ao obter relatórios do servidor:', err);
+        console.error('Falha ao obter relatórios do servidor (usando local cache):', err);
       })
       .finally(() => {
         setLoading(false);
