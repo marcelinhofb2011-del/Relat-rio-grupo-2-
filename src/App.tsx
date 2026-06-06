@@ -13,6 +13,17 @@ import ListaControle from './components/ListaControle';
 import RelatoriosTabela from './components/RelatoriosTabela';
 import GerenciarMembros from './components/GerenciarMembros';
 import PrinterFriendlyReport from './components/PrinterFriendlyReport';
+import {
+  supabase,
+  getMembrosDirect,
+  addMembroDirect,
+  updateMembroDirect,
+  deleteMembroDirect,
+  getRelatoriosDirect,
+  addRelatorioDirect,
+  updateRelatorioDirect,
+  deleteRelatorioDirect
+} from './utils/supabase';
 
 import {
   FileText,
@@ -106,24 +117,66 @@ export default function App() {
   } | null>(null);
 
   // Dynamic check config helper
-  const checkConfig = () => {
-    return fetch('/api/config')
-      .then(r => r.json())
-      .then(data => {
+  const checkConfig = async () => {
+    try {
+      const response = await fetch('/api/config');
+      if (response.ok) {
+        const data = await response.json();
         setSupabaseConnected(data.supabaseConfigured);
         setSupabaseHasTables(data.hasTables);
         setSupabaseError(data.connectionError);
         return data;
-      })
-      .catch(() => {
+      } else {
+        throw new Error('Not local backend');
+      }
+    } catch (e) {
+      if (supabase) {
+        setSupabaseConnected(true);
+        try {
+          const { error: errorMembros } = await supabase.from('membros').select('id').limit(1);
+          const { error: errorRelatorios } = await supabase.from('relatorios').select('id').limit(1);
+          if (!errorMembros && !errorRelatorios) {
+            setSupabaseHasTables(true);
+            setSupabaseError(null);
+            return { supabaseConfigured: true, hasTables: true };
+          } else {
+            const err = errorMembros || errorRelatorios;
+            setSupabaseHasTables(false);
+            setSupabaseError({ message: err?.message || 'Tabelas não encontradas' });
+            return { supabaseConfigured: true, hasTables: false };
+          }
+        } catch (dbErr: any) {
+          setSupabaseHasTables(false);
+          setSupabaseError({ message: dbErr?.message || 'Falha de conexão direta' });
+          return { supabaseConfigured: true, hasTables: false };
+        }
+      } else {
         setSupabaseConnected(false);
         setSupabaseHasTables(false);
-      });
+        return { supabaseConfigured: false, hasTables: false };
+      }
+    }
   };
 
   // Dynamic reload helper
-  const loadData = () => {
+  const loadData = async () => {
     setLoading(true);
+
+    if (supabase) {
+      try {
+        const directMembros = await getMembrosDirect();
+        const directRelatorios = await getRelatoriosDirect();
+        if (directMembros !== null && directRelatorios !== null) {
+          setMembros(directMembros);
+          setRelatorios(directRelatorios);
+          setLoading(false);
+          return;
+        }
+      } catch (err) {
+        console.error('Falha de leitura direta do Supabase:', err);
+      }
+    }
+
     const p1 = fetch('/api/membros')
       .then(r => {
         if (!r.ok) throw new Error(`HTTP status ${r.status}`);
@@ -225,7 +278,7 @@ export default function App() {
   // 3. Database operations
   
   // Register or edit a report (CRUD endpoints save/update pipeline)
-  const handleSaveRelatorio = (newRelData: Omit<Relatorio, 'id' | 'dataRegistro'> & { id?: string }) => {
+  const handleSaveRelatorio = async (newRelData: Omit<Relatorio, 'id' | 'dataRegistro'> & { id?: string }) => {
     if (newRelData.id) {
       // Edit existing
       const updatedRel = {
@@ -237,17 +290,26 @@ export default function App() {
         prev.map((r) => r.id === newRelData.id ? updatedRel : r)
       );
 
-      fetch('/api/relatorios', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedRel)
-      })
-      .then(res => res.json())
-      .then(() => triggerToast('Relatório atualizado no banco de dados!', 'success'))
-      .catch((err) => {
-        console.error(err);
-        triggerToast('Sincronizando com o servidor...', 'info');
-      });
+      let savedDirectly = false;
+      if (supabase) {
+        savedDirectly = await updateRelatorioDirect(updatedRel);
+      }
+
+      if (savedDirectly) {
+        triggerToast('Relatório atualizado diretamente no Supabase!', 'success');
+      } else {
+        fetch('/api/relatorios', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedRel)
+        })
+        .then(res => res.json())
+        .then(() => triggerToast('Relatório atualizado no banco de dados!', 'success'))
+        .catch((err) => {
+          console.error(err);
+          triggerToast('Sincronizando com o servidor...', 'info');
+        });
+      }
 
     } else {
       // Create new
@@ -260,17 +322,26 @@ export default function App() {
 
       setRelatorios((prev) => [...prev, fullRel]);
 
-      fetch('/api/relatorios', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(fullRel)
-      })
-      .then(res => res.json())
-      .then(() => triggerToast(`Relatório de ${newRelData.nomeIrmao} salvo com sucesso!`, 'success'))
-      .catch((err) => {
-        console.error(err);
-        triggerToast('Sincronizando com o servidor...', 'info');
-      });
+      let savedDirectly = false;
+      if (supabase) {
+        savedDirectly = await addRelatorioDirect(fullRel);
+      }
+
+      if (savedDirectly) {
+        triggerToast(`Relatório de ${newRelData.nomeIrmao} salvo no Supabase!`, 'success');
+      } else {
+        fetch('/api/relatorios', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(fullRel)
+        })
+        .then(res => res.json())
+        .then(() => triggerToast(`Relatório de ${newRelData.nomeIrmao} salvo com sucesso!`, 'success'))
+        .catch((err) => {
+          console.error(err);
+          triggerToast('Sincronizando com o servidor...', 'info');
+        });
+      }
     }
     // Deselect member from form
     setSelectedMembroId('');
@@ -286,23 +357,33 @@ export default function App() {
       title: 'Excluir Relatório',
       message: `Tem certeza de que deseja excluir o relatório de ${brotherName}?`,
       confirmText: 'Sim, Excluir',
-      onConfirm: () => {
+      onConfirm: async () => {
         setRelatorios((prev) => prev.filter((r) => r.id !== id));
-        fetch(`/api/relatorios/${id}`, {
-          method: 'DELETE'
-        })
-        .then(() => triggerToast(`Relatório de ${brotherName} foi removido do banco.`, 'info'))
-        .catch((err) => {
-          console.error(err);
-          triggerToast('Sincronizando exclusão...', 'info');
-        });
+
+        let deletedDirectly = false;
+        if (supabase) {
+          deletedDirectly = await deleteRelatorioDirect(id);
+        }
+
+        if (deletedDirectly) {
+          triggerToast(`Relatório de ${brotherName} removido do Supabase.`, 'info');
+        } else {
+          fetch(`/api/relatorios/${id}`, {
+            method: 'DELETE'
+          })
+          .then(() => triggerToast(`Relatório de ${brotherName} foi removido do banco.`, 'info'))
+          .catch((err) => {
+            console.error(err);
+            triggerToast('Sincronizando exclusão...', 'info');
+          });
+        }
         setConfirmModal(null);
       }
     });
   };
 
   // Add new group member
-  const handleAddMembro = (newMembroData: Omit<Membro, 'id'>) => {
+  const handleAddMembro = async (newMembroData: Omit<Membro, 'id'>) => {
     // Check if name already exists
     const duplicate = membros.find(m => m.nome.toLowerCase().trim() === newMembroData.nome.toLowerCase().trim());
     if (duplicate) {
@@ -318,21 +399,30 @@ export default function App() {
     
     setMembros((prev) => [...prev, fullMembro]);
 
-    fetch('/api/membros', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(fullMembro)
-    })
-    .then(res => res.json())
-    .then(() => triggerToast(`${newMembroData.nome} adicionado ao grupo!`, 'success'))
-    .catch((err) => {
-      console.error(err);
-      triggerToast('Sincronizando novo membro...', 'info');
-    });
+    let savedDirectly = false;
+    if (supabase) {
+      savedDirectly = await addMembroDirect(fullMembro);
+    }
+
+    if (savedDirectly) {
+      triggerToast(`${newMembroData.nome} adicionado diretamente ao Supabase!`, 'success');
+    } else {
+      fetch('/api/membros', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fullMembro)
+      })
+      .then(res => res.json())
+      .then(() => triggerToast(`${newMembroData.nome} adicionado ao grupo!`, 'success'))
+      .catch((err) => {
+        console.error(err);
+        triggerToast('Sincronizando novo membro...', 'info');
+      });
+    }
   };
 
   // Update existing member details
-  const handleUpdateMembro = (updatedMembro: Membro) => {
+  const handleUpdateMembro = async (updatedMembro: Membro) => {
     setMembros((prev) =>
       prev.map((m) => (m.id === updatedMembro.id ? updatedMembro : m))
     );
@@ -346,17 +436,26 @@ export default function App() {
       )
     );
 
-    fetch('/api/membros', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updatedMembro)
-    })
-    .then(res => res.json())
-    .then(() => triggerToast(`Cadastro de ${updatedMembro.nome} atualizado no servidor.`, 'success'))
-    .catch((err) => {
-      console.error(err);
-      triggerToast('Sincronizando alterações...', 'info');
-    });
+    let savedDirectly = false;
+    if (supabase) {
+      savedDirectly = await updateMembroDirect(updatedMembro);
+    }
+
+    if (savedDirectly) {
+      triggerToast(`Cadastro de ${updatedMembro.nome} atualizado diretamente no Supabase!`, 'success');
+    } else {
+      fetch('/api/membros', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedMembro)
+      })
+      .then(res => res.json())
+      .then(() => triggerToast(`Cadastro de ${updatedMembro.nome} atualizado no servidor.`, 'success'))
+      .catch((err) => {
+        console.error(err);
+        triggerToast('Sincronizando alterações...', 'info');
+      });
+    }
   };
 
   // Delete a member
@@ -369,17 +468,26 @@ export default function App() {
       title: 'Remover Membro',
       message: `Deseja mesmo remover ${membro.nome} do Grupo? Os históricos de relatórios anteriores serão preservados.`,
       confirmText: 'Sim, Excluir',
-      onConfirm: () => {
+      onConfirm: async () => {
         setMembros((prev) => prev.filter((m) => m.id !== membroId));
 
-        fetch(`/api/membros/${membroId}`, {
-          method: 'DELETE'
-        })
-        .then(() => triggerToast(`${membro.nome} excluído do banco.`, 'info'))
-        .catch((err) => {
-          console.error(err);
-          triggerToast('Sincronizando exclusão...', 'info');
-        });
+        let deletedDirectly = false;
+        if (supabase) {
+          deletedDirectly = await deleteMembroDirect(membroId);
+        }
+
+        if (deletedDirectly) {
+          triggerToast(`${membro.nome} excluído diretamente do Supabase.`, 'info');
+        } else {
+          fetch(`/api/membros/${membroId}`, {
+            method: 'DELETE'
+          })
+          .then(() => triggerToast(`${membro.nome} excluído do banco.`, 'info'))
+          .catch((err) => {
+            console.error(err);
+            triggerToast('Sincronizando exclusão...', 'info');
+          });
+        }
         setConfirmModal(null);
       }
     });
